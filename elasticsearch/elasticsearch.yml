@@ -1,0 +1,5 @@
+cluster.name: "tweet_info_ES"
+network.host: 0.0.0.0
+node.name: "tweet_info_node"
+http.port: 9200
+discovery.type: "single-node"
