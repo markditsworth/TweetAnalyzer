@@ -9,6 +9,7 @@ Created on Fri Mar 20 22:23:32 2020
 import tweepy
 import argparse
 import json
+from datetime import datetime
 from kafka import KafkaProducer
 from secret import *
 
@@ -16,14 +17,6 @@ def initTwitterAPI(api_key, api_secret_key, access_token, access_token_secret):
     auth = tweepy.OAuthHandler(api_key, api_secret_key)
     auth.set_access_token(access_token, access_token_secret)
     return tweepy.API(auth)
-
-def toJSON(timestamp, location, language, text):
-    tweetInfo = {}
-    tweetInfo['timestamp'] = timestamp
-    tweetInfo['locatoin'] = location
-    tweetInfo['language'] = language
-    tweetInfo['text'] = text
-    return json.dumps(tweetInfo)
 
 class MyStreamListener(tweepy.StreamListener):
     def __init__(self, kafkaPublisher=None, topic=None, debug=False):
@@ -38,11 +31,11 @@ class MyStreamListener(tweepy.StreamListener):
     
     def toJSON(self, timestamp, location, language, text):
         tweetInfo = {}
-        tweetInfo['timestamp'] = timestamp
-        tweetInfo['locatoin'] = location
+        tweetInfo['timestamp'] = datetime.strftime(timestamp, '%Y-%m-%d %H:%M:%S')
+        tweetInfo['location'] = location
         tweetInfo['language'] = language
         tweetInfo['text'] = text
-        return json.dumps(tweetInfo)
+        return json.dumps(tweetInfo).encode('ascii')
             
     def on_status(self, status):
         try:
@@ -62,7 +55,7 @@ class MyStreamListener(tweepy.StreamListener):
             if text[:2] != "RT":
                 if self.producer:
                     # publish to kafka
-                    self.publishToKafka(tweet.created_at, tweet.user.location, status.lang, text)
+                    self.publishToKafka(self.toJSON(tweet.created_at, tweet.user.location, status.lang, text))
                     
                 if self.debug or not self.producer:
                     print("[{}] {} ({}): {}".format(tweet.created_at, tweet.user.location, status.lang, text))
@@ -93,6 +86,6 @@ if __name__ == '__main__':
     debug = args.debug
     assert topic or screen_name, "either --topic or --screen-name must be passed in."
     
-    producer = KafkaProducer(bootstrap_server=["localhost:29092"], value_serializer=lambda mes: mes.encode('ascii'))
+    producer = KafkaProducer(bootstrap_servers=["localhost:29092"])
     
     stream(topic=topic,screen_name=screen_name,Async=args.synchronous, kafkaPublisher=producer, debug=debug)
