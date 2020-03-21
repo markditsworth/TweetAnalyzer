@@ -41,7 +41,7 @@ class MyStreamListener(tweepy.StreamListener):
         try:
             tweet = status.extended_tweet
             text = tweet.full_text
-            if text[:2] != "RT":
+            if text[:2] != "RT" and text[0] != "@":
                 if self.producer:
                     # publish to kafka
                     self.publishToKafka(self.toJSON(tweet.created_at, tweet.user.location, status.lang, text))
@@ -52,7 +52,7 @@ class MyStreamListener(tweepy.StreamListener):
         except AttributeError:
             tweet = status
             text = tweet.text
-            if text[:2] != "RT":
+            if text[:2] != "RT" and text[0] != "@":
                 if self.producer:
                     # publish to kafka
                     self.publishToKafka(self.toJSON(tweet.created_at, tweet.user.location, status.lang, text))
