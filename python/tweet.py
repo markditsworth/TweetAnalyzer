@@ -8,6 +8,8 @@ Created on Fri Mar 20 22:23:32 2020
 
 import tweepy
 import argparse
+import json
+from kafka import KafkaProducer
 from secret import *
 
 def initTwitterAPI(api_key, api_secret_key, access_token, access_token_secret):
@@ -15,44 +17,82 @@ def initTwitterAPI(api_key, api_secret_key, access_token, access_token_secret):
     auth.set_access_token(access_token, access_token_secret)
     return tweepy.API(auth)
 
+def toJSON(timestamp, location, language, text):
+    tweetInfo = {}
+    tweetInfo['timestamp'] = timestamp
+    tweetInfo['locatoin'] = location
+    tweetInfo['language'] = language
+    tweetInfo['text'] = text
+    return json.dumps(tweetInfo)
 
 class MyStreamListener(tweepy.StreamListener):
+    def __init__(self, kafkaPublisher=None, topic=None, debug=False):
+        tweepy.StreamListener.__init__(self)
+        self.debug = debug
+        assert topic, 'topic must be defined'
+        self.topic = topic
+        self.producer = kafkaPublisher
+    
+    def publishToKafka(self, message):
+        self.producer.send(self.topic, message)
+    
+    def toJSON(self, timestamp, location, language, text):
+        tweetInfo = {}
+        tweetInfo['timestamp'] = timestamp
+        tweetInfo['locatoin'] = location
+        tweetInfo['language'] = language
+        tweetInfo['text'] = text
+        return json.dumps(tweetInfo)
+            
     def on_status(self, status):
         try:
             tweet = status.extended_tweet
-            if status.lang == 'en':
-                text = tweet.full_text
-                if text[:2] != "RT":
-                    print("[%s] %s: %s"%(tweet.created_at, tweet.user.location, text))
+            text = tweet.full_text
+            if text[:2] != "RT":
+                if self.producer:
+                    # publish to kafka
+                    self.publishToKafka(self.toJSON(tweet.created_at, tweet.user.location, status.lang, text))
+                    
+                if self.debug or not self.producer:
+                    print("[{}] {} ({}): {}".format(tweet.created_at, tweet.user.location, status.lang, text))
                     
         except AttributeError:
             tweet = status
-            if status.lang == 'en':
-                text = tweet.text
-                if text[:2] != "RT":
-                    print("[%s] %s: %s"%(tweet.created_at, tweet.user.location, text))
+            text = tweet.text
+            if text[:2] != "RT":
+                if self.producer:
+                    # publish to kafka
+                    self.publishToKafka(tweet.created_at, tweet.user.location, status.lang, text)
+                    
+                if self.debug or not self.producer:
+                    print("[{}] {} ({}): {}".format(tweet.created_at, tweet.user.location, status.lang, text))
 
-def stream(topics=[''], screen_names=[''], Async=True):
-    myStreamListener = MyStreamListener()
+def stream(topic=None, screen_name=None, Async=True, kafkaPublisher=None, debug=False):
+    myStreamListener = MyStreamListener(kafkaPublisher=kafkaPublisher, topic=topic, debug=debug)
     api = initTwitterAPI(api_key, api_secret_key, access_token, access_token_secret)
-    myStream = tweepy.Stream(auth = api.auth, listener=myStreamListener)
-    if topics[0] != '':
-        myStream.filter(track=topics, is_async=Async)
-    elif screen_names[0] != '':
-        myStream.filter(follow=screen_names, is_async=Async)
+    myStream = tweepy.Stream(auth = api.auth, listener=myStreamListener,)
+    if topic:
+        myStream.filter(track=topic, is_async=Async)
+    elif screen_name:
+        myStream.filter(follow=screen_name, is_async=Async)
     else:
-        raise ValueError("topics and screen_names must be a list")
+        raise ValueError("topic or screen_name must be given")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Stream tweets.')
-    parser.add_argument('--topics', type=str, default='',
-                        help='comma-separated list of keywords to stream.')
-    parser.add_argument('--screen-names', type=str, default='',
-                        help='screen names whose tweets to stream.')
+    parser.add_argument('--topic', type=str, default=None,
+                        help='keyword to stream on.')
+    parser.add_argument('--screen-name', type=str, default=None,
+                        help='screen name whose tweets to stream.')
     parser.add_argument('--synchronous',action='store_false')
+    parser.add_argument('--debug',action='store_true', help='print tweets to console.')
     args = parser.parse_args()
     
-    topics = args.topics.split(',')
-    screen_names = args.screen_names.split(',')
+    topic = args.topic
+    screen_name = args.screen_name
+    debug = args.debug
+    assert topic or screen_name, "either --topic or --screen-name must be passed in."
     
-    stream(topics=topics,screen_names=screen_names,Async=args.synchronous)
+    producer = KafkaProducer(bootstrap_server=["localhost:29092"], value_serializer=lambda mes: mes.encode('ascii'))
+    
+    stream(topic=topic,screen_name=screen_name,Async=args.synchronous, kafkaPublisher=producer, debug=debug)
