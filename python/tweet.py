@@ -29,8 +29,9 @@ class MyStreamListener(tweepy.StreamListener):
     def publishToKafka(self, message):
         self.producer.send(self.topic, message)
     
-    def toJSON(self, timestamp, location, language, text):
+    def toJSON(self, user, timestamp, location, language, text):
         tweetInfo = {}
+        tweetInfo['screen_name'] = user
         tweetInfo['timestamp'] = datetime.strftime(timestamp, '%Y-%m-%d %H:%M:%S')
         tweetInfo['location'] = location
         tweetInfo['language'] = language
@@ -44,10 +45,10 @@ class MyStreamListener(tweepy.StreamListener):
             if text[:2] != "RT" and text[0] != "@":
                 if self.producer:
                     # publish to kafka
-                    self.publishToKafka(self.toJSON(tweet.created_at, tweet.user.location, status.lang, text))
+                    self.publishToKafka(self.toJSON(tweet.user.screen_name, tweet.created_at, tweet.user.location, status.lang, text))
                     
                 if self.debug or not self.producer:
-                    print("[{}] {} ({}): {}".format(tweet.created_at, tweet.user.location, status.lang, text))
+                    print("[{}] {}, {} ({}): {}".format(tweet.created_at, tweet.user.screen_name, tweet.user.location, status.lang, text))
                     
         except AttributeError:
             tweet = status
@@ -55,10 +56,10 @@ class MyStreamListener(tweepy.StreamListener):
             if text[:2] != "RT" and text[0] != "@":
                 if self.producer:
                     # publish to kafka
-                    self.publishToKafka(self.toJSON(tweet.created_at, tweet.user.location, status.lang, text))
+                    self.publishToKafka(self.toJSON(tweet.user.screen_name, tweet.created_at, tweet.user.location, status.lang, text))
                     
                 if self.debug or not self.producer:
-                    print("[{}] {} ({}): {}".format(tweet.created_at, tweet.user.location, status.lang, text))
+                    print("[{}] {}, {} ({}): {}".format(tweet.created_at, tweet.user.screen_name, tweet.user.location, status.lang, text))
 
 def stream(topic=None, screen_name=None, Async=True, kafkaPublisher=None, debug=False):
     myStreamListener = MyStreamListener(kafkaPublisher=kafkaPublisher, topic=topic, debug=debug)
