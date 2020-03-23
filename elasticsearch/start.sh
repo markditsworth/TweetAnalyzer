@@ -1,3 +1,3 @@
 #!/bin/bash
 
-docker start es
+docker start elasticsearch

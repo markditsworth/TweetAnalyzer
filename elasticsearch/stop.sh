@@ -1,3 +1,3 @@
 #!/bin/bash
 
-docker stop es
+docker stop elasticsearch
