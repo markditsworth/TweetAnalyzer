@@ -1,3 +1,4 @@
 python/twitter-stream/*
 python/secret.py
 python/__pycache__
+python/nlp/*
